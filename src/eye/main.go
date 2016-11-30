@@ -4,24 +4,27 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"flag"
 )
 
 const (
-	CONN_HOST = "localhost"
-	CONN_PORT = "3333"
-	CONN_TYPE = "tcp"
+	FRAME_LEN = 18
 )
 
 func main() {
-	// Listen for incoming connections.
-	l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+CONN_PORT)
+	var host = flag.String("host", "localhost", "host")
+	var port = flag.String("port", "3333", "port")
+	flag.Parse()
+
+	addr := *host+":"+*port
+	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
-	// Close the listener when the application closes.
 	defer l.Close()
-	fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
+	fmt.Println("Listening on " + addr)
+
 	for {
 		// Listen for an incoming connection.
 		conn, err := l.Accept()
@@ -34,17 +37,54 @@ func main() {
 	}
 }
 
+func parseFrame(buf [] byte) int {
+	mac := buf[0:6]
+	fmt.Printf("MAC: %x:%x:%x:%x:%x:%x  RSSI %d", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], buf[7])
+	return 0
+}
+
 // Handles incoming requests.
 func handleRequest(conn net.Conn) {
-	// Make a buffer to hold incoming data.
-	buf := make([]byte, 1024)
-	// Read the incoming connection into the buffer.
-	reqLen, err := conn.Read(buf)
-	if err != nil {
-		fmt.Println("Error reading:", err.Error())
+	var head int
+	var tail int
+
+	head = 0
+	tail = 0
+	buf := make([]byte, 1000)
+	for{
+		reqLen, err := conn.Read(buf[tail:])
+		if err != nil {
+			fmt.Println("Error reading:", err.Error())
+			conn.Close()
+			return
+		}
+		tail += reqLen
+		if tail < FRAME_LEN {
+			continue
+		}
+		for head = 0; head < tail; head += 1 {
+			if buf[head] != 0x54 {
+				continue
+			}
+			if head + 1 < tail {
+				if buf[head + 1] != 0x58 {
+					continue
+				} else {
+					break
+				}
+			}
+		}
+		for ; head + FRAME_LEN < tail; head += FRAME_LEN {
+			ret := parseFrame(buf)
+			if ret  == -1 {
+				conn.Close()
+				return
+			}
+		}
+
+		newBuf := make([]byte, 1000)
+		copy(newBuf, buf[head:tail])
+		buf = newBuf
+		tail = 0
 	}
-	// Send a response back to person contacting us.
-	conn.Write([]byte("Message received."))
-	// Close the connection when you're done with it.
-	conn.Close()
 }
