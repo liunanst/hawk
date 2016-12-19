@@ -1,29 +1,75 @@
 package main
 
 import (
+	"baselib"
 	"fmt"
+	"github.com/garyburd/redigo/redis"
 	"net"
 	"os"
-	"flag"
+	"time"
 )
 
 const (
 	FRAME_LEN = 18
 )
 
-func main() {
-	var host = flag.String("host", "localhost", "host")
-	var port = flag.String("port", "3333", "port")
-	flag.Parse()
+var (
+	log       *baselib.Logger
+	redispoll redis.Pool
+)
 
-	addr := *host+":"+*port
-	l, err := net.Listen("tcp", addr)
+func initSvr() {
+
+	err := LoadConfig()
+	if err != nil {
+		fmt.Printf("init failed , exit!")
+		os.Exit(-1)
+	}
+
+	config := &baselib.PoolConfig{
+		Network:      "tcp",
+		Address:      Setting.RedisAddr,
+		Passwd:       Setting.RedisPasswd,
+		Idle:         5,
+		Active:       5,
+		ConnTimeout:  5 * time.Second,
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 2 * time.Second,
+		IdleTimeout:  10 * time.Second,
+	}
+
+	fmt.Printf("Log level %d, log file %s\n", Setting.Log.LogLevel, Setting.Log.LogFile)
+	log, _ = baselib.NewLogger(Setting.Log.LogFile, Setting.Log.LogLevel)
+	log.Info("server start")
+
+	redispoll = baselib.CreateRedisConnPool(config, log)
+	r := redispoll.Get()
+	if err := r.Err(); err != nil {
+		log.Error("get connection to redis failed,%s", err.Error())
+		r.Close()
+		return
+	}
+	r.Close()
+	// save pool
+
+	// use pool
+	//r = pool.Get()
+	//defer r.Close()
+	//
+	//results, err := redis.Strings(r.Do("zrevrangebyscore", param.zKey, param.max, param.min, "limit", 0, param.count))
+
+}
+
+func main() {
+	initSvr()
+
+	l, err := net.Listen("tcp", Setting.LocalAddr)
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 	defer l.Close()
-	fmt.Println("Listening on " + addr)
+	fmt.Println("Listening on " + Setting.LocalAddr)
 
 	for {
 		// Listen for an incoming connection.
@@ -37,7 +83,7 @@ func main() {
 	}
 }
 
-func parseFrame(buf [] byte) int {
+func parseFrame(buf []byte) int {
 	mac := buf[0:6]
 	fmt.Printf("MAC: %x:%x:%x:%x:%x:%x  RSSI %d", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], buf[7])
 	return 0
@@ -51,7 +97,7 @@ func handleRequest(conn net.Conn) {
 	head = 0
 	tail = 0
 	buf := make([]byte, 1000)
-	for{
+	for {
 		reqLen, err := conn.Read(buf[tail:])
 		if err != nil {
 			fmt.Println("Error reading:", err.Error())
@@ -66,17 +112,17 @@ func handleRequest(conn net.Conn) {
 			if buf[head] != 0x54 {
 				continue
 			}
-			if head + 1 < tail {
-				if buf[head + 1] != 0x58 {
+			if head+1 < tail {
+				if buf[head+1] != 0x58 {
 					continue
 				} else {
 					break
 				}
 			}
 		}
-		for ; head + FRAME_LEN < tail; head += FRAME_LEN {
+		for ; head+FRAME_LEN < tail; head += FRAME_LEN {
 			ret := parseFrame(buf)
-			if ret  == -1 {
+			if ret == -1 {
 				conn.Close()
 				return
 			}

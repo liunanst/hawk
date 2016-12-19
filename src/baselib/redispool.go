@@ -27,7 +27,7 @@ func connect(log *Logger, network, address string, connectTimeout, readTimeout, 
 		}
 		//fmt.Printf("redis conn connectTimeout %d, readTimeout %d, writeTimeout %d \n", connectTimeout,readTimeout,writeTimeout)
 		if len(passwd) > 0 {
-			_, err = c.Do("auth", "gfquote")
+			_, err = c.Do("auth", passwd)
 			if err != nil {
 				log.Error("redis auth failed:%s,%s,%s", network, address, passwd)
 				c.Close()
@@ -53,15 +53,15 @@ func CreateRedisConnPool(config *PoolConfig, log *Logger) redis.Pool {
 }
 
 func example() {
-	config := &base.PoolConfig{
+	config := &PoolConfig{
 		Network:      "tcp",
 		Address:      "127.0.0.1",
 		Passwd:       "passwd",
 		Idle:         5,
 		Active:       5,
-		ConnTimeout:  1 * time.Second,
-		ReadTimeout:  1 * time.Second,
-		WriteTimeout: 1 * time.Second,
+		ConnTimeout:  5 * time.Second,
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 2 * time.Second,
 		IdleTimeout:  10 * time.Second,
 	}
 
@@ -71,7 +71,7 @@ func example() {
 	if err := r.Err(); err != nil {
 		//log.Error("get connection from redis %s load pool failed,%s", market.Redishost, err.Error())
 		r.Close()
-		return err
+		return
 	}
 	r.Close()
 	// save pool
@@ -80,6 +80,6 @@ func example() {
 	r = pool.Get()
 	defer r.Close()
 
-	results, err := redis.Strings(r.Do("zrevrangebyscore", param.zKey, param.max, param.min, "limit", 0, param.count))
+	//results, err := redis.Strings(r.Do("zrevrangebyscore", param.zKey, param.max, param.min, "limit", 0, param.count))
 
 }
